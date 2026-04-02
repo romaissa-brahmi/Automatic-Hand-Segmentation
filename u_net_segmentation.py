@@ -38,8 +38,8 @@ from sklearn.model_selection import train_test_split
 # --------------------
 print("Creating the variables...")
 
-NB_IMAGES = 1111
-EPOCHS = 20
+NB_IMAGES = 9800
+EPOCHS = 30
 BATCH_SIZE = 32
 learning_rate = 0.001
 
@@ -140,8 +140,11 @@ print("✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹
 
 
 X_train, X_test, y_mask_train, y_mask_test, y_lm_train, y_lm_test = train_test_split(X, y_mask, y_landmarks, test_size=0.2, random_state=12)
-print(f"Train samples: {X_train.shape[0]}, Test samples: {X_test.shape[0]}")
-print(f"Train samples: {X_test.shape[0]}, Test samples: {y_mask_test.shape[0]}")
+print(f"Images ==> Train samples: {X_train.shape[0]}, Test samples: {X_test.shape[0]}")
+print(f"Masks  ==> Train samples: {y_mask_train.shape[0]}, Test samples: {y_mask_test.shape[0]}")
+print(f"Landmarks  ==> Train samples: {y_lm_train.shape[0]}, Test samples: {y_lm_test.shape[0]}")
+
+
 
 dataset = tf.data.Dataset.from_tensor_slices((X_train, {"seg": y_mask_train,
                                                         "landmarks": y_lm_train
@@ -227,10 +230,7 @@ with strategy.scope():
             "seg": sm.losses.DiceLoss(),
             "landmarks": "mse"
         },
-        loss_weights={
-            "seg": 1.0,
-            "landmarks": 10.0
-        },
+
         metrics={
             "seg": [metrics.BinaryIoU(name="iou")],
             "landmarks": ["mae"]
@@ -239,12 +239,6 @@ with strategy.scope():
     model.summary()
 
 
-print("--- DEBUG DATA ---")
-print(f"Max Landmark: {np.max(y_lm_train)}") # DOIT être <= 1.0
-print(f"Min Landmark: {np.min(y_lm_train)}") # DOIT être >= 0.0
-print(f"Shape Y_LM: {y_lm_train.shape}")      # DOIT être (nb_images, 8)
-print(f"Exemple premier vecteur: {y_lm_train[0]}")
-print("------------------")
 
 # --------
 # Training
