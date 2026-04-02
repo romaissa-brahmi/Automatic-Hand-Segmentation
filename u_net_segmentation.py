@@ -38,7 +38,7 @@ from sklearn.model_selection import train_test_split
 # --------------------
 print("Creating the variables...")
 
-NB_IMAGES = 9800
+NB_IMAGES = 9999
 EPOCHS = 30
 BATCH_SIZE = 32
 learning_rate = 0.001
@@ -65,7 +65,7 @@ y_directory = "data/masks"
 
 df = pd.read_csv("landmarks_data.csv")
 df.columns = df.columns.str.strip() # y'a des espaces au début du nom de certaines colonnes
-df = df.head(NB_IMAGES)
+#df = df.head(NB_IMAGES)
 
 X, y_mask, y_landmarks = [], [], []
 
