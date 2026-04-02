@@ -29,12 +29,16 @@ from sklearn.model_selection import train_test_split
 
 # --------------------
 # Create the variables
-# qq
+# --------------------
 print("Creating the variables...")
-NB_IMAGES = 100
-EPOCHS = 1
-BATCH_SIZE = 12
+NB_IMAGES = 11
+EPOCHS = 20
+BATCH_SIZE = 32
 learning_rate = 0.001
+
+now = datetime.now()
+date_now = now.strftime("%d/%m/%Y %H:%M:%S")
+metrics_file_name = now.strftime("%Y%m%d_%H%M%S")
 
 
 # -------------
@@ -53,7 +57,7 @@ y_directory = "data/masks"
 
 df = pd.read_csv("landmarks_data.csv")
 df.columns = df.columns.str.strip() # y'a des espaces au début du nom de certaines colonnes
-df = df.head(NB_IMAGES)
+#df = df.head(NB_IMAGES)
 
 X, y_mask, y_landmarks = [], [], []
 
@@ -145,6 +149,7 @@ def unet_2d_multi(input_shape=(96, 96, 3)):
     c1 = layers.Conv2D(8, 3, activation='relu', padding='same')(inputs)
     c2 = layers.Conv2D(8, 3, activation='relu', padding='same')(c1)
     p1 = layers.MaxPooling2D(2)(c2)
+    
 
     c3 = layers.Conv2D(16, 3, activation='relu', padding='same')(p1)
     c4 = layers.Conv2D(16, 3, activation='relu', padding='same')(c3)
@@ -163,7 +168,7 @@ def unet_2d_multi(input_shape=(96, 96, 3)):
     # ------ Output layers ------
     seg_output = layers.Conv2D(1, 1, activation='sigmoid', name="seg")(u2)
     flat = layers.GlobalAveragePooling2D()(c5)
-    lm_output = layers.Dense(8, name="landmarks")(flat)
+    lm_output = layers.Dense(8, activation='sigmoid', name="landmarks")(flat)
 
     return Model(inputs, [seg_output, lm_output])
 
@@ -197,6 +202,8 @@ history = model.fit(X_train,{"seg": y_mask_train,
 
 fig, axs = plt.subplots(1, 2, figsize=(15, 5))
 
+fig.suptitle(f"Metrics - {date_now}", fontsize=16)
+
 # --- Segmentation (IoU)
 axs[0].plot(history.history['seg_iou'], label='Train IoU')
 axs[0].plot(history.history['val_seg_iou'], label='Val IoU', linestyle='--')
@@ -212,6 +219,11 @@ axs[1].legend()
 axs[1].grid(True)
 
 plt.tight_layout()
+
+# --- Sauvegarde du graphique ---
+os.makedirs("metric_results", exist_ok=True)
+plt.savefig(f"metric_results/metrics_{metrics_file_name}.png")
+
 plt.show()
 
 
@@ -287,6 +299,7 @@ for i, (image_BGR, predicted_mask, true_mask, pred_points) in enumerate(zip(X_te
 # Save the results
 # ----------------
 new_data = {
+    "Date_Execution": date_now,
     "Input shape": input_shape,
     "NB_IMAGES": NB_IMAGES,
     "Learning Rate": learning_rate,
