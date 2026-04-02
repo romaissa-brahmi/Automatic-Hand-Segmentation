@@ -1,6 +1,7 @@
 # --------------------
 # Import the libraries
 # --------------------
+print("⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡")
 print("Importing the libraries...")
 
 import os
@@ -36,7 +37,8 @@ from sklearn.model_selection import train_test_split
 # Create the variables
 # --------------------
 print("Creating the variables...")
-NB_IMAGES = 11
+
+NB_IMAGES = 1111
 EPOCHS = 20
 BATCH_SIZE = 32
 learning_rate = 0.001
@@ -53,24 +55,27 @@ def parse_coord(coord_str):
     x, y = coord_str.split("x")
     return float(x), float(y)
 
-
 print("Loading the data...")
-input_shape = (96, 96)
+print("⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡ ⋆˚꩜｡")
+
+input_shape = (128, 128)
 
 X_directory = "data/images"
 y_directory = "data/masks"
 
 df = pd.read_csv("landmarks_data.csv")
 df.columns = df.columns.str.strip() # y'a des espaces au début du nom de certaines colonnes
-#df = df.head(NB_IMAGES)
+df = df.head(NB_IMAGES)
 
 X, y_mask, y_landmarks = [], [], []
 
 for _, row in df.iterrows():
-    id_str = str(row["id"]).zfill(6)
+    filename = str(row["filename"]).strip()
+    id_image = os.path.splitext(filename)[0]
 
-    image_path = os.path.join(X_directory, f"{id_str}.png")
-    mask_path = os.path.join(y_directory, f"{id_str}.png")
+
+    image_path = os.path.join(X_directory, f"{id_image}.png")
+    mask_path = os.path.join(y_directory, f"{id_image}.png")
 
     image = cv2.imread(image_path)
     label = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
@@ -89,13 +94,18 @@ for _, row in df.iterrows():
     label_resized = label_resized / 255.0
     label_resized = np.expand_dims(label_resized, axis=-1)
 
-
+    h_original, w_original = image.shape[:2]
     lm0 = parse_coord(row["0"])
     lm5 = parse_coord(row["5"])
     lm17 = parse_coord(row["17"])
     center = parse_coord(row["0-5-17 center"])
 
-    lm_vector = np.array([*lm0, *lm5, *lm17, *center], dtype=np.float32)
+    lm_vector = np.array([
+        lm0[0] / w_original, lm0[1] / h_original,
+        lm5[0] / w_original, lm5[1] / h_original,
+        lm17[0] / w_original, lm17[1] / h_original,
+        center[0] / w_original, center[1] / h_original
+    ], dtype=np.float32)
 
     X.append(image_resized)
     y_mask.append(label_resized)
@@ -107,21 +117,27 @@ X = np.array(X)
 y_mask = np.array(y_mask)
 y_landmarks = np.array(y_landmarks, dtype=np.float32)
 
-if len(y_landmarks.shape) == 1:
-    y_landmarks = np.stack(y_landmarks)
+for i, lm in enumerate(y_landmarks):
+    if np.any(lm > 1.0):
+        print(f"Landmark corrompu à l'index {i}, valeurs : {lm}")
 
-h, w = input_shape
+# certaines sont "corrompues", il faut donc les supprimer!
+valid_indices = np.all((y_landmarks >= 0) & (y_landmarks <= 1), axis=1)
+print(f"Images valides : {np.sum(valid_indices)} / {len(y_landmarks)}")
 
-y_landmarks[:, 0::2] = y_landmarks[:, 0::2] / w
-y_landmarks[:, 1::2] = y_landmarks[:, 1::2] / h
+X = X[valid_indices]
+y_mask = y_mask[valid_indices]
+y_landmarks = y_landmarks[valid_indices]
 
 print("X shape =", X.shape, "y_mask shape =", y_mask.shape, "y_landmarks shape =", y_landmarks.shape)
-
 
 # -------------
 # Preprocessing
 # -------------
-print("Preprocessing...")
+print("✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧")
+print("✩₊˚⊹.⋆☾⋆⁺₊✧      Preprocessing      ✩₊˚⊹.⋆☾⋆⁺₊✧")
+print("✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧")
+
 
 X_train, X_test, y_mask_train, y_mask_test, y_lm_train, y_lm_test = train_test_split(X, y_mask, y_landmarks, test_size=0.2, random_state=12)
 print(f"Train samples: {X_train.shape[0]}, Test samples: {X_test.shape[0]}")
@@ -146,64 +162,104 @@ testing_dataset = tf.data.Dataset.from_tensor_slices((X_test,{"seg": y_mask_test
 # ------------------------
 # Build the Neural Network
 # ------------------------
-print("Building the Neural Network...")
-def unet_2d_multi(input_shape=(96, 96, 3)):
+print("✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩")
+print("✮ ⋆ ˚｡𖦹 ⋆｡°✩     Building the Neural Network...    ✮ ⋆ ˚｡𖦹 ⋆｡°✩")
+print("✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩")
+
+def unet_2d_multi(input_shape=(128, 128, 3)):
     inputs = layers.Input(shape=input_shape)
 
     # ------ Encoder ------
-    c1 = layers.Conv2D(8, 3, activation='relu', padding='same')(inputs)
-    c2 = layers.Conv2D(8, 3, activation='relu', padding='same')(c1)
-    p1 = layers.MaxPooling2D(2)(c2)
-    
+    c1 = layers.Conv2D(64, 3, activation='relu', padding='same')(inputs)
+    c1 = layers.Conv2D(64, 3, activation='relu', padding='same')(c1)
+    p1 = layers.MaxPooling2D(2)(c1)
 
-    c3 = layers.Conv2D(16, 3, activation='relu', padding='same')(p1)
-    c4 = layers.Conv2D(16, 3, activation='relu', padding='same')(c3)
-    p2 = layers.MaxPooling2D(2)(c4)
+
+    c2 = layers.Conv2D(128, 3, activation='relu', padding='same')(p1)
+    c2 = layers.Conv2D(128, 3, activation='relu', padding='same')(c2)
+    p2 = layers.MaxPooling2D(2)(c2)
+
+
+    c3 = layers.Conv2D(256, 3, activation='relu', padding='same')(p2)
+    c3 = layers.Conv2D(256, 3, activation='relu', padding='same')(c3)
+    p3 = layers.MaxPooling2D(2)(c3)
+
+
+    c4 = layers.Conv2D(512, 3, activation='relu', padding='same')(p3)
+    c4 = layers.Conv2D(512, 3, activation='relu', padding='same')(c4)
+    p4 = layers.MaxPooling2D(2)(c4)
+
 
     # ------ Bottleneck ------
-    c5 = layers.Conv2D(32, 3, activation='relu', padding='same')(p2)
+    c5 = layers.Conv2D(1024, 3, activation='relu', padding='same')(p4)
+    c5 = layers.Dropout(0.5)(c5)
+    c5 = layers.Conv2D(1024, 3, activation='relu', padding='same')(c5)
 
     # ------ Decoder ------
-
     u1 = layers.UpSampling2D(2)(c5)
     u1 = layers.Concatenate()([u1, c4])
+    u1 = layers.Conv2D(512, 3, activation='relu', padding='same')(u1)
+
     u2 = layers.UpSampling2D(2)(u1)
-    u2 = layers.Concatenate()([u2, c2])
+    u2 = layers.Concatenate()([u2, c3])
+    u2 = layers.Conv2D(256, 3, activation='relu', padding='same')(u2)
+
+    u3 = layers.UpSampling2D(2)(u2)
+    u3 = layers.Concatenate()([u3, c2])
+    u3 = layers.Conv2D(128, 3, activation='relu', padding='same')(u3)
+
+    u4 = layers.UpSampling2D(2)(u3)
+    u4 = layers.Concatenate()([u4, c1])
+    u4 = layers.Conv2D(64, 3, activation='relu', padding='same')(u4)
 
     # ------ Output layers ------
-    seg_output = layers.Conv2D(1, 1, activation='sigmoid', name="seg")(u2)
+    seg_output = layers.Conv2D(1, 1, activation='sigmoid', name="seg")(u4)
     flat = layers.GlobalAveragePooling2D()(c5)
     lm_output = layers.Dense(8, activation='sigmoid', name="landmarks")(flat)
 
     return Model(inputs, [seg_output, lm_output])
 
 with strategy.scope():
-    model = unet_2d_multi(input_shape=(96, 96, 3))
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-                  loss={
-                      "seg": sm.losses.DiceLoss(),
-                      "landmarks": "mse"
-                  },
-                  metrics={
-                            "seg": [metrics.BinaryIoU(name="iou")],
-                            "landmarks": ["mae"]
-                  }
-                 )
+    model = unet_2d_multi(input_shape=(128, 128, 3))
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+        loss={
+            "seg": sm.losses.DiceLoss(),
+            "landmarks": "mse"
+        },
+        loss_weights={
+            "seg": 1.0,
+            "landmarks": 10.0
+        },
+        metrics={
+            "seg": [metrics.BinaryIoU(name="iou")],
+            "landmarks": ["mae"]
+        }
+    )
     model.summary()
 
+
+print("--- DEBUG DATA ---")
+print(f"Max Landmark: {np.max(y_lm_train)}") # DOIT être <= 1.0
+print(f"Min Landmark: {np.min(y_lm_train)}") # DOIT être >= 0.0
+print(f"Shape Y_LM: {y_lm_train.shape}")      # DOIT être (nb_images, 8)
+print(f"Exemple premier vecteur: {y_lm_train[0]}")
+print("------------------")
 
 # --------
 # Training
 # --------
-print("Training the Neural Network...")
-history = model.fit(X_train,{"seg": y_mask_train,
-                             "landmarks": y_lm_train
-                            },
-          validation_data=(X_test,{"seg": y_mask_test,
-                                   "landmarks": y_lm_test }),
-          epochs=EPOCHS,
-          batch_size=BATCH_SIZE
-                    )
+print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
+print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*         Training the Neural Network...        °❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
+print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
+
+history = model.fit(
+    X_train,
+    [y_mask_train, y_lm_train],
+    validation_data=(X_test, [y_mask_test, y_lm_test]),
+    epochs=EPOCHS,
+    batch_size=BATCH_SIZE
+)
 
 fig, axs = plt.subplots(1, 2, figsize=(15, 5))
 
@@ -235,6 +291,7 @@ plt.show()
 # ----------
 # Evaluating
 # ----------
+print("✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧")
 print("Evaluating the Neural Network...")
 results = model.evaluate(X_test,{"seg": y_mask_test,
                                  "landmarks": y_lm_test
@@ -247,6 +304,8 @@ results_dict = dict(zip(model.metrics_names, results))
 # Predict
 # -------
 print("Predicting...")
+print("✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧")
+
 os.makedirs("output", exist_ok=True)
 
 pred_seg, pred_lm = model.predict(X_test, batch_size=BATCH_SIZE)
@@ -354,5 +413,6 @@ else:
     df_new.to_csv("results_u_net.csv", index=False)
 
 df = pd.read_csv("results_u_net.csv")
-
-print("Program done running!")
+print(". ݁₊ ⊹ . ݁ ⟡ ݁ . ⊹ ₊ ݁. ݁₊ ⊹ . ݁ ⟡ ݁ . ⊹ ₊ ݁. ݁₊ ⊹ . ݁ ⟡ ݁ . ⊹ ₊ ݁. ݁₊ ⊹ . ݁ ⟡ ݁ . ⊹ ₊ ݁.")
+print(". ݁₊ ⊹ . ݁ ⟡ ݁ . ⊹ ₊ ݁.      Program done running !        . ݁₊ ⊹ . ݁ ⟡ ݁ . ⊹ ₊ ݁.")
+print(". ݁₊ ⊹ . ݁ ⟡ ݁ . ⊹ ₊ ݁. ݁₊ ⊹ . ݁ ⟡ ݁ . ⊹ ₊ ݁. ݁₊ ⊹ . ݁ ⟡ ݁ . ⊹ ₊ ݁. ݁₊ ⊹ . ݁ ⟡ ݁ . ⊹ ₊ ݁.")
