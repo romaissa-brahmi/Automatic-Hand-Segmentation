@@ -6,16 +6,19 @@ print("Importing the libraries...")
 import os
 os.environ['SM_FRAMEWORK'] = 'tf.keras'
 
+from gpu_config import GPUManager
+gpu_manager = GPUManager(gpu_ids="1")
+strategy = gpu_manager.get_strategy()
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import cv2
 from datetime import datetime
 
-import os
-os.environ['SM_FRAMEWORK'] = 'tf.keras'
-
 import tensorflow as tf
+
 
 keras = tf.keras
 layers = tf.keras.layers
@@ -26,6 +29,8 @@ utils = tf.keras.utils
 import segmentation_models as sm
 
 from sklearn.model_selection import train_test_split
+
+
 
 # --------------------
 # Create the variables
@@ -172,19 +177,19 @@ def unet_2d_multi(input_shape=(96, 96, 3)):
 
     return Model(inputs, [seg_output, lm_output])
 
-
-model = unet_2d_multi(input_shape=(96, 96, 3))
-model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-              loss={
-                  "seg": sm.losses.DiceLoss(),
-                  "landmarks": "mse"
-              },
-              metrics={
-                        "seg": [metrics.BinaryIoU(name="iou")],
-                        "landmarks": ["mae"]
-              }
-             )
-model.summary()
+with strategy.scope():
+    model = unet_2d_multi(input_shape=(96, 96, 3))
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+                  loss={
+                      "seg": sm.losses.DiceLoss(),
+                      "landmarks": "mse"
+                  },
+                  metrics={
+                            "seg": [metrics.BinaryIoU(name="iou")],
+                            "landmarks": ["mae"]
+                  }
+                 )
+    model.summary()
 
 
 # --------
