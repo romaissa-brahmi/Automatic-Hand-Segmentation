@@ -279,7 +279,6 @@ plt.tight_layout()
 os.makedirs("metric_results", exist_ok=True)
 plt.savefig(f"metric_results/metrics_{metrics_file_name}.png")
 
-plt.show()
 
 
 # ----------
