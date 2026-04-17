@@ -1,2 +1,0 @@
-Date_Execution,Input shape,NB_IMAGES,Learning Rate,Batch Size,Epochs,Training IoU,Validation IoU,Test IoU,Training MAE,Validation MAE,Test MAE,Training Loss,Validation Loss,Test Loss,Test Seg Loss,Test Landmarks Loss
-06/04/2026 17:01:49,"(128, 128)",9999,0.001,32,30,97.89,97.68,97.67,0.0166,0.0149,0.0149,0.02,0.0223,0.0223,0.0214,0.0009
