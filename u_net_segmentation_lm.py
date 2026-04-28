@@ -68,7 +68,7 @@ df = pd.read_csv("data/hand_data.csv")
 df.columns = df.columns.str.strip() # y'a des espaces au début du nom de certaines colonnes
 
 
-X, y_mask, y_landmarks = [], [], []
+X, y_mask, y_landmarks, image_paths = [], [], [], []
 
 for _, row in df.iterrows():
 
@@ -81,10 +81,8 @@ for _, row in df.iterrows():
     label = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
 
     if image is None:
-        print(f"Image introuvable ou illisible : {image_path}")
         continue
     if label is None:
-        print(f"Masque introuvable ou illisible : {mask_path}")
         continue
 
     image_resized = cv2.resize(image, input_shape)
@@ -110,6 +108,7 @@ for _, row in df.iterrows():
     X.append(image_resized)
     y_mask.append(label_resized)
     y_landmarks.append(lm_vector)
+    image_paths.append(id_image)
 
 print(f"Chargement terminé : {len(X)} images chargées.")
 
@@ -119,9 +118,14 @@ y_landmarks = np.array(y_landmarks, dtype=np.float32)
 
 print("X shape =", X.shape, "y_mask shape =", y_mask.shape, "y_landmarks shape =", y_landmarks.shape)
 
-print(np.min(X))
-print(np.max(X))
-print(np.unique(y_mask))
+
+if np.min(X)>0 or np.max(X)>1:
+    print(np.min(X))
+    print(np.max(X))
+    print("X n'est pas normalise!")
+elif len(np.unique(y_mask)>2):
+    print(np.unique(y_mask))
+    print("les masques ne sont pas binarises!")
 
 
 # -------------
@@ -132,7 +136,7 @@ print("✩₊˚⊹.⋆☾⋆⁺₊✧      Preprocessing      ✩₊˚⊹.⋆☾
 print("✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧")
 
 
-X_train, X_test, y_mask_train, y_mask_test, y_lm_train, y_lm_test = train_test_split(X, y_mask, y_landmarks, test_size=0.2, random_state=12)
+X_train, X_test, y_mask_train, y_mask_test, y_lm_train, y_lm_test, paths_train, paths_test = train_test_split(X, y_mask, y_landmarks, image_paths, test_size=0.2, random_state=12)
 print(f"Images ==> Train samples: {X_train.shape[0]}, Test samples: {X_test.shape[0]}")
 print(f"Masks  ==> Train samples: {y_mask_train.shape[0]}, Test samples: {y_mask_test.shape[0]}")
 print(f"Landmarks  ==> Train samples: {y_lm_train.shape[0]}, Test samples: {y_lm_test.shape[0]}")
@@ -307,13 +311,20 @@ pred_seg, pred_lm = model.predict(X_test, batch_size=BATCH_SIZE)
 for i, (image_BGR, predicted_mask, true_mask, pred_points, true_points) in enumerate(
         zip(X_test, pred_seg, y_mask_test, pred_lm, y_lm_test)):
 
-    binary_mask = (predicted_mask > 0.5).astype(np.uint8)
-    fig, axs = plt.subplots(1, 3, figsize=(15, 5))  # Augmentation de la largeur pour 3 subplots
+    id_image = paths_test[i]
 
-    image_BGR = (image_BGR * 255).astype('uint8')
-    image_RGB = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2RGB)
+    image_path = os.path.join(X_directory, f"{id_image}.png")
+    mask_path = os.path.join(y_directory, f"{id_image}.png")
 
-    h, w = image_RGB.shape[:2]
+    image_original = cv2.imread(image_path)
+    mask_original = cv2.imread(mask_path)
+    image_original = cv2.cvtColor(image_original, cv2.COLOR_BGR2RGB)
+    h, w = image_original.shape[:2]
+
+    mask_resized = cv2.resize(predicted_mask, (w, h), interpolation=cv2.INTER_LINEAR)
+    binary_mask = (mask_resized > 0.5).astype(np.uint8)
+
+    fig, axs = plt.subplots(1, 3, figsize=(18, 6), dpi=100)
 
     p_points = pred_points.reshape(4, 2)
     p_landmarks = p_points[:3]
@@ -324,7 +335,7 @@ for i, (image_BGR, predicted_mask, true_mask, pred_points, true_points) in enume
     t_center = t_points[3]
 
     # --- Affichage Image + Landmarks ---
-    axs[0].imshow(image_RGB)
+    axs[0].imshow(image_original)
 
     for j, (x, y) in enumerate(t_landmarks):
         axs[0].scatter(x * w, y * h, c='salmon', s=40, edgecolors='white', marker='o',
@@ -347,17 +358,17 @@ for i, (image_BGR, predicted_mask, true_mask, pred_points, true_points) in enume
     axs[0].axis('off')
 
     # --- Carte de segmentation prédite ---
-    axs[1].imshow(binary_mask, cmap='gray')
+    axs[1].imshow(binary_mask, cmap='gray', interpolation='none')
     axs[1].set_title("Predicted mask")
     axs[1].axis('off')
 
     # --- Vraie carte de segmentation ---
-    axs[2].imshow(true_mask, cmap='gray')
+    axs[2].imshow(mask_original, cmap='gray', interpolation='none')
     axs[2].set_title("True mask")
     axs[2].axis('off')
 
     plt.tight_layout()
-    fig.savefig(f'output/{i}.png')
+    fig.savefig(f'output/{i}.png', bbox_inches='tight')
     plt.close(fig)
 
 
