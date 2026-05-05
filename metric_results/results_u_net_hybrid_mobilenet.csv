@@ -1,0 +1,4 @@
+Date_Execution,Input shape,NB_IMAGES,Learning Rate Resnet,Learning Rate Unet,Batch Size,Epochs Resnet,Epochs Unet,Training IoU,Validation IoU,Test IoU,Training MAE,Validation MAE,Test MAE,Training Loss,Validation Loss,Test Loss,Test Seg Loss,Test Landmarks Loss
+04/05/2026 09:53:01,"(128, 128)",1764,0.001,0.0001,32,10,30,98.78,98.75,97.95,0.1294,0.0428,0.0465,0.3044,0.047,0.0675,0.0313,0.0036
+04/05/2026 10:11:28,"(128, 128)",1764,0.001,0.0001,32,10,30,98.84,98.69,97.92,0.025,0.0633,0.0802,0.0279,0.0853,0.1197,0.0318,0.0088
+04/05/2026 10:28:23,"(128, 128)",1764,0.001,0.0001,32,10,30,98.86,98.46,97.55,0.0222,0.0599,0.084,0.0255,0.0858,0.1381,0.0373,0.0101

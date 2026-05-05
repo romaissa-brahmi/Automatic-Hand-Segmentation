@@ -38,9 +38,11 @@ from sklearn.model_selection import train_test_split
 # --------------------
 print("Creating the variables...")
 
-EPOCHS = 40
+EPOCHS_MOBILENET = 10
+EPOCHS_UNET = 30
 BATCH_SIZE = 32
-learning_rate = 0.001
+learning_rate_mobilenet = 1e-3
+learning_rate_unet = 1e-4
 
 now = datetime.now()
 date_now = now.strftime("%d/%m/%Y %H:%M:%S")
@@ -61,7 +63,7 @@ def get_center(lm0, lm5, lm17):
 def overlay_mask_on_image(image, mask, color=(0, 255, 0), alpha=0.5):
     if mask.ndim == 3:
         mask = mask[:, :, 0]
-        
+
     mask = (mask > 0).astype(np.uint8)
     color_image = np.full_like(image, color, dtype=np.uint8)
     blended = cv2.addWeighted(image, 1 - alpha, color_image, alpha, 0)
@@ -69,6 +71,7 @@ def overlay_mask_on_image(image, mask, color=(0, 255, 0), alpha=0.5):
     result = np.where(mask_3d == 1, blended, image)
 
     return result.astype(np.uint8)
+
 
 
 print("Loading the data...")
@@ -102,7 +105,6 @@ for _, row in df.iterrows():
     image_resized = cv2.resize(image, input_shape)
     label_resized = cv2.resize(label, input_shape, interpolation=cv2.INTER_NEAREST)
 
-    image_resized = image_resized.astype(np.float32) / 255.0
     label_resized = label_resized / 255.0
     label_resized = np.expand_dims(label_resized, axis=-1)
 
@@ -136,10 +138,10 @@ print("X shape =", X.shape, "y_mask shape =", y_mask.shape, "y_landmarks shape =
 if np.min(X)>0 or np.max(X)>1:
     print(np.min(X))
     print(np.max(X))
-    print("X n'est pas normalise!")
+    print("X n'est pas normalisé!")
 elif len(np.unique(y_mask)>2):
     print(np.unique(y_mask))
-    print("les masques ne sont pas binarises!")
+    print("les masques ne sont pas binarisés!")
 
 
 # -------------
@@ -149,6 +151,8 @@ print("✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹
 print("✩₊˚⊹.⋆☾⋆⁺₊✧      Preprocessing      ✩₊˚⊹.⋆☾⋆⁺₊✧")
 print("✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧ ✩₊˚⊹.⋆☾⋆⁺₊✧")
 
+preprocess_input = sm.get_preprocessing('mobilenetv2')
+X = preprocess_input(X)
 
 X_train, X_test, y_mask_train, y_mask_test, y_lm_train, y_lm_test, paths_train, paths_test = train_test_split(X, y_mask, y_landmarks, image_paths, test_size=0.2, random_state=12)
 print(f"Images ==> Train samples: {X_train.shape[0]}, Test samples: {X_test.shape[0]}")
@@ -177,66 +181,45 @@ print("✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡
 print("✮ ⋆ ˚｡𖦹 ⋆｡°✩     Building the Neural Network...    ✮ ⋆ ˚｡𖦹 ⋆｡°✩")
 print("✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩ ✮ ⋆ ˚｡𖦹 ⋆｡°✩")
 
-def unet_2d_multi(input_shape=(128, 128, 3)):
+def unet_2d_multi_pretrained(input_shape=(128, 128, 3)):
+    # 1) Load pre-trained unet
+    base_model = sm.Unet(
+        backbone_name='mobilenetv2',
+        encoder_weights='imagenet',
+        encoder_freeze=True,
+        input_shape=input_shape,
+        classes=1,
+        activation='sigmoid'
+    )
 
-    inputs = layers.Input(shape=input_shape)
+    # 2) get unet bottleneck
+    encoder_output = base_model.get_layer('out_relu').output
 
-    # ------ Encoder ------
-    c1 = layers.Conv2D(64, 3, activation='relu', padding='same')(inputs)
-    c1 = layers.Conv2D(64, 3, activation='relu', padding='same')(c1)
-    p1 = layers.MaxPooling2D(2)(c1)
+    # 3) landmarks output
+    x = layers.GlobalAveragePooling2D()(encoder_output)
+    x = layers.Dense(256, activation='relu')(x)
+    lm_output = layers.Dense(8, activation='linear', name="landmarks")(x)
 
+    # 4) segmentation output
+    seg_output = layers.Layer(name="seg")(base_model.output)
 
-    c2 = layers.Conv2D(128, 3, activation='relu', padding='same')(p1)
-    c2 = layers.Conv2D(128, 3, activation='relu', padding='same')(c2)
-    p2 = layers.MaxPooling2D(2)(c2)
-
-
-    c3 = layers.Conv2D(256, 3, activation='relu', padding='same')(p2)
-    c3 = layers.Conv2D(256, 3, activation='relu', padding='same')(c3)
-    p3 = layers.MaxPooling2D(2)(c3)
+    return Model(inputs=base_model.input, outputs=[seg_output, lm_output])
 
 
-    c4 = layers.Conv2D(512, 3, activation='relu', padding='same')(p3)
-    c4 = layers.Conv2D(512, 3, activation='relu', padding='same')(c4)
-    p4 = layers.MaxPooling2D(2)(c4)
+# --------
+# Training
+# --------
+print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
+print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*         Training the Neural Network...        °❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
+print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
 
 
-    # ------ Bottleneck ------
-    c5 = layers.Conv2D(1024, 3, activation='relu', padding='same')(p4)
-    c5 = layers.Dropout(0.5)(c5)
-    c5 = layers.Conv2D(1024, 3, activation='relu', padding='same')(c5)
-
-    # ------ Decoder ------
-    u1 = layers.UpSampling2D(2)(c5)
-    u1 = layers.Concatenate()([u1, c4])
-    u1 = layers.Conv2D(512, 3, activation='relu', padding='same')(u1)
-
-    u2 = layers.UpSampling2D(2)(u1)
-    u2 = layers.Concatenate()([u2, c3])
-    u2 = layers.Conv2D(256, 3, activation='relu', padding='same')(u2)
-
-    u3 = layers.UpSampling2D(2)(u2)
-    u3 = layers.Concatenate()([u3, c2])
-    u3 = layers.Conv2D(128, 3, activation='relu', padding='same')(u3)
-
-    u4 = layers.UpSampling2D(2)(u3)
-    u4 = layers.Concatenate()([u4, c1])
-    u4 = layers.Conv2D(64, 3, activation='relu', padding='same')(u4)
-
-    # ------ Output layers ------
-    seg_output = layers.Conv2D(1, 1, activation='sigmoid', name="seg")(u4)
-    flat = layers.GlobalAveragePooling2D()(c5)
-    flat = layers.Dense(256, activation='relu')(flat)
-    lm_output = layers.Dense(8, activation='linear', name="landmarks")(flat)
-
-    return Model(inputs, [seg_output, lm_output])
-
+print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*         MobileNet part...        °❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
 
 with strategy.scope():
-    model = unet_2d_multi(input_shape=(128, 128, 3))
+    model = unet_2d_multi_pretrained(input_shape=(128, 128, 3))
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate_mobilenet),
         loss={
             "seg": sm.losses.bce_dice_loss,
             "landmarks": "mse"
@@ -254,27 +237,40 @@ with strategy.scope():
     )
     model.summary()
 
+model.fit(training_dataset, validation_data=validation_dataset, epochs=EPOCHS_MOBILENET)
 
 
-# --------
-# Training
-# --------
-print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
-print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*         Training the Neural Network...        °❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
-print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
+print("°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*         U-Net part...        °❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*")
+
+model.trainable = True
+with strategy.scope():
+
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate_unet),
+        loss={
+            "seg": sm.losses.bce_dice_loss,
+            "landmarks": "mse"
+        },
+
+        loss_weights={
+            "seg": 1.0,
+            "landmarks": 10.0
+        },
+
+        metrics={
+            "seg": [metrics.BinaryIoU(name="iou")],
+            "landmarks": ["mae"]
+        }
+    )
+
+    model.summary()
 
 
-early_stopping = tf.keras.callbacks.EarlyStopping(
-    monitor='val_loss',
-    patience=10,
-    restore_best_weights=True
-)
 
 history = model.fit(
     training_dataset,
     validation_data=validation_dataset,
-    epochs=EPOCHS,
-    callbacks=[early_stopping]
+    epochs=EPOCHS_UNET
 )
 
 
@@ -300,7 +296,7 @@ plt.tight_layout()
 
 # --- Sauvegarde du graphique ---
 os.makedirs("metric_results", exist_ok=True)
-plt.savefig(f"metric_results/metrics_{metrics_file_name}.png")
+plt.savefig(f"metric_results/metrics_hybrid_mobilenet_{metrics_file_name}.png")
 
 
 
@@ -318,7 +314,7 @@ results_dict = dict(zip(model.metrics_names, results))
 print("Predicting...")
 print("✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧ ✩₊˚.⋆☾⋆⁺₊✧")
 
-os.makedirs("output", exist_ok=True)
+os.makedirs("output_hybrid_mobilenet", exist_ok=True)
 
 pred_seg, pred_lm = model.predict(X_test, batch_size=BATCH_SIZE)
 
@@ -336,7 +332,8 @@ for i, (image_BGR, predicted_mask, true_mask, pred_points, true_points) in enume
     h, w = image_original.shape[:2]
 
     mask_resized = cv2.resize(predicted_mask, (w, h), interpolation=cv2.INTER_LINEAR)
-    binary_mask = (mask_resized > 0.5).astype(np.uint8)
+    mask_smoothed = cv2.GaussianBlur(mask_resized, (15, 15), 0)
+    binary_mask = (mask_smoothed > 0.5).astype(np.uint8)
 
     fig, axs = plt.subplots(1, 3, figsize=(18, 6), dpi=100)
 
@@ -383,9 +380,8 @@ for i, (image_BGR, predicted_mask, true_mask, pred_points, true_points) in enume
     axs[2].set_title("True mask", fontsize='17')
     axs[2].axis('off')
 
-
     plt.tight_layout()
-    fig.savefig(f'output/{i}.png', bbox_inches='tight')
+    fig.savefig(f'output_hybrid_mobilenet/{i}.png', bbox_inches='tight')
     plt.close(fig)
 
 
@@ -396,9 +392,11 @@ new_data = {
     "Date_Execution": date_now,
     "Input shape": input_shape,
     "NB_IMAGES": X.shape[0],
-    "Learning Rate": learning_rate,
+    "Learning Rate Resnet": learning_rate_mobilenet,
+    "Learning Rate Unet": learning_rate_unet,
     "Batch Size": BATCH_SIZE,
-    "Epochs": EPOCHS,
+    "Epochs Resnet": EPOCHS_MOBILENET,
+    "Epochs Unet": EPOCHS_UNET,
 
     "Training IoU": max(history.history['seg_iou']) * 100,
     "Validation IoU": max(history.history['val_seg_iou']) * 100,
@@ -436,7 +434,7 @@ df_new = df_new.round({
 })
 
 
-CSV_FILE = "metric_results/results_u_net.csv"
+CSV_FILE = "metric_results/results_u_net_hybrid_mobilenet.csv"
 
 if os.path.exists(CSV_FILE):
     df_existing = pd.read_csv(CSV_FILE)
